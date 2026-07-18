@@ -150,7 +150,7 @@ include:
 
 ## sconce OIDC setup (once per repo)
 
-The publish/upload components need `sconce` ≥ the release that understands
+The publish/upload components need `sconce` ≥ 0.6.0, which understands
 `$SCONCE_ID_TOKEN` (GitLab's pre-issued JWT; older CLIs only speak GitHub
 Actions' request-URL flow). On the server side, add a CI policy trusting the
 GitLab project:
@@ -214,7 +214,3 @@ version, and the push mirror carries the tag to GitHub; `include:remote`
 consumers pin the same tag in the raw URL, no catalog involved. The
 project's catalog-resource flag was set once via the GraphQL
 `catalogResourcesCreate` mutation and sticks.
-
-Note: don't tag a first release before a sconce release ships
-`$SCONCE_ID_TOKEN` support in `sconce publish` (cresset-tools/sconce#34) —
-the two sconce components are inert without it.
