@@ -172,13 +172,11 @@ OIDC.
 
 The canonical repo is
 [`gitlab.com/cresset-tools/components`](https://gitlab.com/cresset-tools/components),
-flagged as a CI/CD Catalog resource. The `mirror-to-github` job in
-`.gitlab-ci.yml` force-pushes `main` and tags to
+flagged as a CI/CD Catalog resource. A GitLab push mirror (Settings →
+Repository → Mirroring repositories; SSH public key auth, the key
+registered as a write deploy key on the GitHub side) mirrors it to
 [`github.com/cresset-tools/gitlab-components`](https://github.com/cresset-tools/gitlab-components),
-which serves the raw `include:remote` URLs for self-managed consumers. Auth
-is a write deploy key scoped to the GitHub repo, held in the protected
-`MIRROR_SSH_KEY` file variable — protected refs only, so fork pipelines
-never see it.
+which serves the raw `include:remote` URLs for self-managed consumers.
 
 To release: tag bare semver (`1.0.0` — the catalog requires plain semver
 tags). The `create-release` job publishes the catalog version and the
