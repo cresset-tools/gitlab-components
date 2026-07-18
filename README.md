@@ -168,18 +168,19 @@ JWKS. If it can't (instance behind a VPN), fall back to a stored token: set a
 masked `SCONCE_PUBLISH_TOKEN` CI/CD variable and the CLI uses it instead of
 OIDC.
 
-## Publishing to the CI/CD Catalog (maintainers)
+## Mirroring & releases (maintainers)
 
-The canonical source lives on GitHub; gitlab.com consumption goes through a
-push mirror:
+The canonical repo is
+[`gitlab.com/cresset-tools/components`](https://gitlab.com/cresset-tools/components),
+flagged as a CI/CD Catalog resource. The `mirror-to-github` job in
+`.gitlab-ci.yml` force-pushes `main` and tags to
+[`github.com/cresset-tools/gitlab-components`](https://github.com/cresset-tools/gitlab-components),
+which serves the raw `include:remote` URLs for self-managed consumers. Auth
+is a write deploy key scoped to the GitHub repo, held in the protected
+`MIRROR_SSH_KEY` file variable — protected refs only, so fork pipelines
+never see it.
 
-1. Create `gitlab.com/cresset-tools/components`, push this repo to it (a
-   GitHub Actions workflow that force-pushes `main` + tags does fine).
-2. In the GitLab project: Settings → General → set a description, then
-   **Visibility** → toggle *CI/CD Catalog resource*.
-3. Tag semver releases as bare `1.0.0` (the catalog requires plain semver
-   tags). The `create-release` job in `.gitlab-ci.yml` turns the tag into a
-   catalog release on the GitLab side.
-
-`include:remote` consumers just pin the same tags in the raw URL — no
-catalog involved.
+To release: tag bare semver (`1.0.0` — the catalog requires plain semver
+tags). The `create-release` job publishes the catalog version and the
+mirror job pushes the tag to GitHub; `include:remote` consumers pin the
+same tag in the raw URL, no catalog involved.
