@@ -1,0 +1,38 @@
+stages: [test, release]
+
+# Sanity-check every component template: two YAML documents (spec + config),
+# with at least one declared input.
+lint-templates:
+  stage: test
+  image: python:3-alpine
+  script:
+    - pip install --quiet pyyaml
+    - |
+      python - <<'EOF'
+      import glob, sys, yaml
+
+      failed = False
+      for path in sorted(glob.glob('templates/*.yml')):
+          with open(path) as f:
+              docs = list(yaml.safe_load_all(f))
+          inputs = (docs[0].get('spec') or {}).get('inputs') if docs else None
+          if len(docs) != 2 or not inputs:
+              print(f'{path}: expected a spec:inputs header plus one template document')
+              failed = True
+          else:
+              print(f'{path}: ok ({len(inputs)} inputs)')
+      sys.exit(1 if failed else 0)
+      EOF
+
+# Turn a semver tag into a release, which the CI/CD Catalog picks up as a
+# component version (the project must be marked as a catalog resource).
+create-release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^\d+\.\d+\.\d+$/
+  script:
+    - echo "Creating catalog release $CI_COMMIT_TAG"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    description: cresset-tools GitLab CI/CD components $CI_COMMIT_TAG

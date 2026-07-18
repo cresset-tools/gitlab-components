@@ -1,0 +1,81 @@
+spec:
+  inputs:
+    version:
+      default: latest
+      description: >-
+        bougie version to install, e.g. "0.44.1". Defaults to the latest
+        GitHub release.
+    php-version:
+      default: ''
+      description: >-
+        Optional PHP version to pre-install (e.g. "8.4"). Projects normally
+        pin PHP via composer.json / bougie.toml and need no explicit version;
+        use this to run PHP outside a project.
+    telemetry:
+      default: 'false'
+      description: >-
+        Opt this job in to bougie's anonymous usage telemetry ("true", or
+        "local" to only write events to disk). Telemetry stays off in CI
+        unless explicitly enabled; DO_NOT_TRACK always wins.
+    cache-key:
+      default: bougie
+      description: >-
+        GitLab cache key. One mutable cache, updated every run — bougie
+        reuses partial caches and fetches only what's missing. Segment it
+        (e.g. "bougie-arm64") when jobs on different architectures or
+        base images would otherwise share a key.
+---
+# Extend `.bougie` to get a job with bougie on PATH and its PHP interpreters,
+# Composer packages, and service runtimes cached between runs:
+#
+#   include:
+#     - component: gitlab.com/cresset-tools/components/bougie@<version>
+#
+#   test:
+#     extends: .bougie
+#     script:
+#       - bougie sync
+#       - bougie run -- vendor/bin/phpunit
+#
+# The install runs from `before_script`. A job that defines its own
+# `before_script` replaces this one — re-run it first with
+# `!reference [.bougie, before_script]` in that case. The image needs curl,
+# tar, and a glibc or musl userland (any Debian/Ubuntu/Alpine image works).
+.bougie:
+  variables:
+    # GitLab only caches paths inside the project directory, so anchor
+    # bougie's whole tree there. BOUGIE_HOME alone collapses the `local`
+    # (installs) tree onto it; the download cache needs its own override.
+    BOUGIE_HOME: $CI_PROJECT_DIR/.bougie
+    BOUGIE_CACHE: $CI_PROJECT_DIR/.bougie/cache
+    BOUGIE_NO_SELF_UPDATE: '1'
+  # One stable, mutable cache — not keyed on composer.lock. GitLab has no
+  # prefix-fallback restore (only exact fallback_keys), so a lock-hash key
+  # would drop the whole cache on every lock change; bougie handles partial
+  # caches fine and just fetches the delta. Clear it from the GitLab UI if
+  # it ever grows stale.
+  cache:
+    key: $[[ inputs.cache-key ]]
+    paths:
+      - .bougie/
+  before_script:
+    - |
+      set -eu
+      version='$[[ inputs.version ]]'
+      if [ "$version" = latest ]; then
+        installer="https://github.com/cresset-tools/bougie/releases/latest/download/bougie-installer.sh"
+      else
+        installer="https://github.com/cresset-tools/bougie/releases/download/bougie-v${version}/bougie-installer.sh"
+      fi
+      # Download, then run: `curl | sh` would mask a failed download in
+      # shells without pipefail.
+      curl --proto '=https' --tlsv1.2 -fLsS -o /tmp/bougie-installer.sh "$installer"
+      sh /tmp/bougie-installer.sh
+      export PATH="$HOME/.local/bin:$PATH"
+      case '$[[ inputs.telemetry ]]' in
+        true|on) export BOUGIE_TELEMETRY=on ;;
+        local)   export BOUGIE_TELEMETRY=local ;;
+      esac
+      if [ -n '$[[ inputs.php-version ]]' ]; then
+        bougie php install '$[[ inputs.php-version ]]'
+      fi

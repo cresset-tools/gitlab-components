@@ -1,0 +1,69 @@
+spec:
+  inputs:
+    version:
+      default: latest
+      description: magequery version to install (for example, "0.9.0"), or "latest".
+    args:
+      default: doctor
+      description: Any magequery command and its arguments.
+    root:
+      default: '.'
+      description: Magento project root, relative to the workspace.
+    sync:
+      type: boolean
+      default: true
+      description: >-
+        Install bougie and run `bougie sync` first, so magequery sees a
+        populated vendor/ tree. Disable when a previous job already provides
+        vendor/ via cache or artifacts.
+    cache-key:
+      default: bougie
+      description: >-
+        GitLab cache key for the bougie tree. Matches the bougie component's
+        default, so this job shares its cache.
+    stage:
+      default: test
+      description: Pipeline stage the check runs in.
+    image:
+      default: buildpack-deps:curl
+      description: Job image; needs curl, tar, and a glibc or musl userland.
+---
+# Install magequery and run a static check or query against a Magento 2 /
+# Mage-OS project. magequery reads the source tree directly, so static
+# commands need no database, generated code, or Magento bootstrap — but most
+# checks want vendor/ present, so by default the job installs bougie and runs
+# `bougie sync` first (with the same in-project cache layout as the bougie
+# component).
+magequery:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  variables:
+    BOUGIE_HOME: $CI_PROJECT_DIR/.bougie
+    BOUGIE_CACHE: $CI_PROJECT_DIR/.bougie/cache
+    BOUGIE_NO_SELF_UPDATE: '1'
+  # Same stable mutable key as the bougie component (see its template for
+  # why this isn't keyed on composer.lock), so the two share one cache.
+  cache:
+    key: $[[ inputs.cache-key ]]
+    paths:
+      - .bougie/
+  script:
+    - |
+      set -eu
+      export PATH="$HOME/.local/bin:$PATH"
+      if [ '$[[ inputs.sync ]]' = true ]; then
+        curl --proto '=https' --tlsv1.2 -fLsS -o /tmp/bougie-installer.sh \
+          "https://github.com/cresset-tools/bougie/releases/latest/download/bougie-installer.sh"
+        sh /tmp/bougie-installer.sh
+        (cd '$[[ inputs.root ]]' && bougie sync)
+      fi
+      version='$[[ inputs.version ]]'
+      if [ "$version" = latest ]; then
+        installer="https://github.com/cresset-tools/magequery/releases/latest/download/magequery-installer.sh"
+      else
+        installer="https://github.com/cresset-tools/magequery/releases/download/magequery-v${version}/magequery-installer.sh"
+      fi
+      curl --proto '=https' --tlsv1.2 -fLsS -o /tmp/magequery-installer.sh "$installer"
+      sh /tmp/magequery-installer.sh
+      cd '$[[ inputs.root ]]'
+      magequery $[[ inputs.args ]]

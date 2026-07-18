@@ -1,0 +1,61 @@
+spec:
+  inputs:
+    repo:
+      description: Target sconce repository, as <org>/<repo>.
+    url:
+      description: Base URL of the sconce wire server, e.g. https://repo.example.com.
+    file:
+      description: Snapshot file to upload (e.g. a .jibsdump), relative to the workspace.
+    environment:
+      description: Environment label the snapshot becomes the latest of (e.g. production).
+    audience:
+      default: sconce
+      description: OIDC audience the repo's publish policy expects.
+    sconce-version:
+      default: latest
+      description: sconce version to install, e.g. "0.6.0". Defaults to the latest release.
+    stage:
+      default: deploy
+      description: Pipeline stage the upload job runs in.
+    image:
+      default: buildpack-deps:curl
+      description: Job image; needs curl, tar, and a glibc or musl userland.
+---
+# Upload a database snapshot to a sconce repository from CI, with zero stored
+# secrets. GitLab mints an OIDC JWT straight into $SCONCE_ID_TOKEN
+# (`id_tokens:` below); `sconce snapshot push` exchanges it at
+# /oauth/ci-publish for a short-lived publish token and uploads the file
+# (resumable chunks for large dumps).
+#
+# The job has no `rules:`, so it runs on every pipeline by default — add your
+# own trigger in the consuming project, e.g. only on schedules:
+#
+#   sconce-upload:
+#     rules:
+#       - if: $CI_PIPELINE_SOURCE == "schedule"
+#
+# The target repo needs a CI policy trusting this project (see the
+# sconce-publish component; snapshot pushes use the same `publish` capability).
+sconce-upload:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  id_tokens:
+    SCONCE_ID_TOKEN:
+      aud: $[[ inputs.audience ]]
+  script:
+    - |
+      set -eu
+      version='$[[ inputs.sconce-version ]]'
+      if [ "$version" = latest ]; then
+        installer="https://github.com/cresset-tools/sconce/releases/latest/download/sconce-installer.sh"
+      else
+        installer="https://github.com/cresset-tools/sconce/releases/download/sconce-v${version}/sconce-installer.sh"
+      fi
+      curl --proto '=https' --tlsv1.2 -fLsS -o /tmp/sconce-installer.sh "$installer"
+      sh /tmp/sconce-installer.sh
+      export PATH="$HOME/.local/bin:$PATH"
+      sconce snapshot push '$[[ inputs.file ]]' \
+        --repo '$[[ inputs.repo ]]' \
+        --url '$[[ inputs.url ]]' \
+        --env '$[[ inputs.environment ]]' \
+        --audience '$[[ inputs.audience ]]'

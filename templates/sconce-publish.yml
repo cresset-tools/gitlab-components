@@ -1,0 +1,64 @@
+spec:
+  inputs:
+    repo:
+      description: Target sconce repository, as <org>/<repo>.
+    url:
+      description: Base URL of the sconce wire server, e.g. https://repo.example.com.
+    dir:
+      default: '.'
+      description: Package directory to publish (contains composer.json at its root).
+    version:
+      default: $CI_COMMIT_TAG
+      description: Version to publish. Defaults to the pipeline's git tag.
+    audience:
+      default: sconce
+      description: OIDC audience the repo's publish policy expects.
+    sconce-version:
+      default: latest
+      description: sconce version to install, e.g. "0.6.0". Defaults to the latest release.
+    stage:
+      default: deploy
+      description: Pipeline stage the publish job runs in.
+    image:
+      default: buildpack-deps:curl
+      description: Job image; needs curl, tar, and a glibc or musl userland.
+---
+# Push a Composer package to a sconce repository from CI, with zero stored
+# secrets. GitLab mints an OIDC JWT straight into $SCONCE_ID_TOKEN
+# (`id_tokens:` below); `sconce publish` exchanges it at /oauth/ci-publish
+# for a short-lived publish token, tars the package directory, and uploads
+# it (resumable chunks for large packages).
+#
+# The target repo needs a CI policy trusting this project:
+#
+#   sconce ci-policy add --repo <org>/<repo> --provider gitlab \
+#     --issuer https://gitlab.com --audience sconce \
+#     --claim project_path=<group>/<project> --capability publish
+#
+# (Use your instance URL as --issuer on self-managed GitLab; the sconce
+# server must be able to reach it to fetch the JWKS.)
+sconce-publish:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  id_tokens:
+    SCONCE_ID_TOKEN:
+      aud: $[[ inputs.audience ]]
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - |
+      set -eu
+      version='$[[ inputs.sconce-version ]]'
+      if [ "$version" = latest ]; then
+        installer="https://github.com/cresset-tools/sconce/releases/latest/download/sconce-installer.sh"
+      else
+        installer="https://github.com/cresset-tools/sconce/releases/download/sconce-v${version}/sconce-installer.sh"
+      fi
+      curl --proto '=https' --tlsv1.2 -fLsS -o /tmp/sconce-installer.sh "$installer"
+      sh /tmp/sconce-installer.sh
+      export PATH="$HOME/.local/bin:$PATH"
+      sconce publish '$[[ inputs.dir ]]' \
+        --repo '$[[ inputs.repo ]]' \
+        --url '$[[ inputs.url ]]' \
+        --version "$[[ inputs.version ]]" \
+        --audience '$[[ inputs.audience ]]'
