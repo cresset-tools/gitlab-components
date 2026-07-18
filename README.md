@@ -172,13 +172,49 @@ OIDC.
 
 The canonical repo is
 [`gitlab.com/cresset-tools/components`](https://gitlab.com/cresset-tools/components),
-flagged as a CI/CD Catalog resource. A GitLab push mirror (Settings →
-Repository → Mirroring repositories; SSH public key auth, the key
-registered as a write deploy key on the GitHub side) mirrors it to
+flagged as a CI/CD Catalog resource. A native GitLab **push mirror** mirrors
+`main` and tags to
 [`github.com/cresset-tools/gitlab-components`](https://github.com/cresset-tools/gitlab-components),
 which serves the raw `include:remote` URLs for self-managed consumers.
+Development happens on GitLab; treat the GitHub repo as read-only output.
 
-To release: tag bare semver (`1.0.0` — the catalog requires plain semver
-tags). The `create-release` job publishes the catalog version and the
-mirror job pushes the tag to GitHub; `include:remote` consumers pin the
-same tag in the raw URL, no catalog involved.
+The mirror authenticates with an SSH keypair GitLab generated for it, whose
+public half is a **write deploy key** on the GitHub repo — no personal
+tokens anywhere. It pushes on every change (with periodic retries); check
+its health under Settings → Repository → Mirroring repositories.
+
+### Recreating the mirror from scratch
+
+If the mirror ever needs to be rebuilt, mind the one API gap: the REST API
+cannot set SSH host keys on a mirror (`ssh_known_hosts` is UI-only), so an
+API-created SSH mirror always fails with "Host key verification failed" —
+the mirror must be created in the UI.
+
+1. GitLab: Settings → Repository → Mirroring repositories → Add new.
+   - URL: `ssh://git@github.com/cresset-tools/gitlab-components.git`
+     (the `ssh://` form is required for host-key detection; the username
+     for GitHub over SSH is always `git`).
+   - Direction **Push**, authentication **SSH public key**.
+   - Click **Detect host keys**, save. Leave "only protected branches"
+     unchecked so tags mirror too.
+2. Fetch the generated public key:
+   `GET /projects/cresset-tools%2Fcomponents/remote_mirrors/:id/public_key`
+   (or "Copy SSH public key" in the UI).
+3. Add it to the GitHub repo as a deploy key **with write access**
+   (Settings → Deploy keys).
+4. Force a first sync:
+   `POST /projects/cresset-tools%2Fcomponents/remote_mirrors/:id/sync`,
+   then check `update_status`/`last_error` on the mirror.
+
+### Releasing
+
+Tag bare semver (`1.0.0` — the catalog requires plain semver tags, no `v`
+prefix). The tag pipeline's `create-release` job publishes the catalog
+version, and the push mirror carries the tag to GitHub; `include:remote`
+consumers pin the same tag in the raw URL, no catalog involved. The
+project's catalog-resource flag was set once via the GraphQL
+`catalogResourcesCreate` mutation and sticks.
+
+Note: don't tag a first release before a sconce release ships
+`$SCONCE_ID_TOKEN` support in `sconce publish` (cresset-tools/sconce#34) —
+the two sconce components are inert without it.
