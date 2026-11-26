@@ -27,6 +27,16 @@ spec:
     image:
       default: buildpack-deps:curl
       description: Job image; needs curl, tar, and a glibc or musl userland.
+    codequality:
+      type: boolean
+      default: true
+      description: >-
+        When args run doctor, also write its findings as a Code Quality
+        report and upload it, so the merge request shows them. Needs a
+        magequery with `doctor --format gitlab`; older ones skip it.
+    codequality-file:
+      default: gl-code-quality-report.json
+      description: Where the Code Quality report is written, relative to the project directory.
 ---
 # Install magequery and run a static check or query against a Magento 2 /
 # Mage-OS project. magequery reads the source tree directly, so static
@@ -47,6 +57,11 @@ magequery:
     key: $[[ inputs.cache-key ]]
     paths:
       - .bougie/
+  # Uploaded when doctor fails too: that is when the merge request needs it.
+  artifacts:
+    when: always
+    reports:
+      codequality: $[[ inputs.codequality-file ]]
   script:
     - |
       set -eu
@@ -65,5 +80,24 @@ magequery:
       fi
       curl --proto '=https' --tlsv1.2 -fLsS -o /tmp/magequery-installer.sh "$installer"
       sh /tmp/magequery-installer.sh
-      cd '$[[ inputs.root ]]'
-      magequery $[[ inputs.args ]]
+      report="$CI_PROJECT_DIR/$[[ inputs.codequality-file ]]"
+      # An empty report when there is nothing to report on, so the upload
+      # never warns about a missing file.
+      echo '[]' > "$report"
+      status=0
+      (cd '$[[ inputs.root ]]' && magequery $[[ inputs.args ]]) || status=$?
+      set -f
+      set -- $[[ inputs.args ]]
+      set +f
+      if [ '$[[ inputs.codequality ]]' = true ] && [ "${1:-}" = doctor ]; then
+        if magequery doctor --help 2>/dev/null | grep -q -- 'gitlab'; then
+          # From the project directory, so paths in the report are the
+          # repository's even when the store sits in a subdirectory. Kept
+          # only when it is a report (args that pick another format conflict).
+          magequery --root '$[[ inputs.root ]]' $[[ inputs.args ]] --format gitlab > "$report.new" 2>/dev/null || true
+          if [ "$(head -c1 "$report.new")" = '[' ]; then mv "$report.new" "$report"; else rm -f "$report.new"; fi
+        else
+          echo "magequery $(magequery --version) has no doctor --format gitlab; no Code Quality report"
+        fi
+      fi
+      exit "$status"

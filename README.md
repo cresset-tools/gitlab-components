@@ -147,6 +147,15 @@ include:
 | `cache-key` | `bougie` | Cache key for the bougie tree (shared with the bougie component). |
 | `stage` | `test` | Pipeline stage. |
 | `image` | `buildpack-deps:curl` | Job image (needs curl + tar). |
+| `codequality` | `true` | For `doctor`, also upload its findings as a Code Quality report. |
+| `codequality-file` | `gl-code-quality-report.json` | Where that report is written. |
+
+With `args` running `doctor`, the job also writes doctor's findings as a
+[Code Quality](https://docs.gitlab.com/ee/ci/testing/code_quality.html) report
+and uploads it as `artifacts:reports:codequality`, failing or not, so the merge
+request shows each finding on its file and line. The job log keeps doctor's
+usual text output. This needs a magequery with `doctor --format gitlab`; with an
+older one the report stays empty.
 
 ## sconce OIDC setup (once per repo)
 
